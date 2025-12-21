@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-
+# 设置Hugging Face镜像源
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 # 导入我们的模块
 from data_handler import MovieLensDataHandler
 from recommender import CollaborativeFilteringRecommender
 from lightgcn_recommender import LightGCNRecommender
+from palr_recommender import PALRRecommender
 
 # 设置页面配置
 st.set_page_config(
@@ -72,11 +74,15 @@ def load_data_and_model():
             with st.spinner('正在训练LightGCN模型...'):
                 lightgcn_recommender.train(epochs=50)  # 使用50个epoch进行训练
     
-    return data_handler, cf_recommender, lightgcn_recommender, movies
+    # 初始化PALR推荐器
+    with st.spinner('正在初始化PALR增强推荐器...'):
+        palr_recommender = PALRRecommender(lightgcn_recommender, movies)
+    
+    return data_handler, cf_recommender, lightgcn_recommender, palr_recommender, movies
 
 # 加载数据和模型
 try:
-    data_handler, cf_recommender, lightgcn_recommender, movies_df = load_data_and_model()
+    data_handler, cf_recommender, lightgcn_recommender, palr_recommender, movies_df = load_data_and_model()
 except Exception as e:
     st.error(f"加载数据时出错: {str(e)}")
     st.stop()
@@ -85,7 +91,7 @@ except Exception as e:
 st.sidebar.header("⚙️ 推荐设置")
 user_id = st.sidebar.number_input("请输入用户ID", min_value=1, max_value=6040, value=1)
 n_recommendations = st.sidebar.slider("推荐数量", min_value=1, max_value=20, value=5)
-method = st.sidebar.radio("推荐方法", ("基于用户", "基于物品", "LightGCN"))
+method = st.sidebar.radio("推荐方法", ("基于用户", "基于物品", "LightGCN", "PALR增强"))
 
 # 主要内容区域
 col1, col2 = st.columns(2)
@@ -119,13 +125,27 @@ with col2:
                     recommendations = cf_recommender.recommend_items_user_based(user_id, n_recommendations)
                 elif method == "基于物品":
                     recommendations = cf_recommender.recommend_items_item_based(user_id, n_recommendations)
-                else:  # LightGCN
+                elif method == "LightGCN":
                     recommendations = lightgcn_recommender.recommend(user_id-1, n_recommendations)  # LightGCN uses 0-based indexing
+                else:  # PALR增强
+                    # 获取LightGCN的基础推荐
+                    base_recommendations = lightgcn_recommender.recommend(user_id-1, n_recommendations*2)
+                    
+                    # 获取用户历史评分
+                    user_history = []
+                    user_ratings = data_handler.ratings_df[data_handler.ratings_df['userId'] == user_id]
+                    for _, row in user_ratings.iterrows():
+                        user_history.append((row['movieId'], row['rating']))
+                    
+                    # 使用PALR增强推荐
+                    recommendations = palr_recommender.recommend(
+                        user_id, user_history, base_recommendations, n_recommendations
+                    )
                 
                 if recommendations:
                     # 获取推荐电影的详细信息
-                    if method == "LightGCN":
-                        # LightGCN返回的是(item_id, score)元组
+                    if method in ["LightGCN", "PALR增强"]:
+                        # LightGCN和PALR返回的是(item_id, score)元组
                         recommended_movie_ids = [item_id+1 for item_id, score in recommendations]  # Convert back to 1-based indexing
                         score_dict = {item_id+1: score for item_id, score in recommendations}
                     else:
