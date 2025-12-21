@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 
 # 导入我们的模块
 from data_handler import MovieLensDataHandler
 from recommender import CollaborativeFilteringRecommender
+from lightgcn_recommender import LightGCNRecommender
 
 # 设置页面配置
 st.set_page_config(
@@ -20,10 +22,11 @@ st.markdown("---")
 # 初始化数据处理器和推荐器
 @st.cache_resource
 def load_data_and_model():
-    # 初始化数据处理器
+    # 初始化数据处理器，使用ml-1m数据集
     data_handler = MovieLensDataHandler(
-        ratings_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-latest-small/ratings.csv",
-        movies_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-latest-small/movies.csv"
+        ratings_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-1m/ratings.dat",
+        movies_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-1m/movies.dat",
+        dataset_type='ml-1m'
     )
     
     # 加载数据
@@ -38,30 +41,51 @@ def load_data_and_model():
     # 创建用户-物品矩阵
     user_item_matrix = data_handler.create_user_item_matrix(train_data)
     
-    # 初始化推荐器
-    recommender = CollaborativeFilteringRecommender(user_item_matrix)
+    # 初始化传统协同过滤推荐器
+    cf_recommender = CollaborativeFilteringRecommender(user_item_matrix)
     
     # 计算相似度矩阵
     with st.spinner('正在计算用户相似度矩阵...'):
-        recommender.compute_user_similarity()
+        cf_recommender.compute_user_similarity()
     
     with st.spinner('正在计算物品相似度矩阵...'):
-        recommender.compute_item_similarity()
+        cf_recommender.compute_item_similarity()
     
-    return data_handler, recommender, movies
+    # 初始化LightGCN推荐器
+    with st.spinner('正在初始化LightGCN模型...'):
+        lightgcn_recommender = LightGCNRecommender(user_item_matrix)
+        
+        # 尝试加载预训练模型
+        model_path = "models/lightgcn_ml1m.pth"
+        if os.path.exists(model_path):
+            try:
+                with st.spinner('正在加载预训练模型...'):
+                    lightgcn_recommender.load_model(model_path)
+                st.success("成功加载预训练模型!")
+            except Exception as e:
+                st.warning(f"加载预训练模型失败: {str(e)}，将重新训练模型...")
+                # 训练LightGCN模型
+                with st.spinner('正在训练LightGCN模型...'):
+                    lightgcn_recommender.train(epochs=50)  # 使用50个epoch进行训练
+        else:
+            # 训练LightGCN模型
+            with st.spinner('正在训练LightGCN模型...'):
+                lightgcn_recommender.train(epochs=50)  # 使用50个epoch进行训练
+    
+    return data_handler, cf_recommender, lightgcn_recommender, movies
 
 # 加载数据和模型
 try:
-    data_handler, recommender, movies_df = load_data_and_model()
+    data_handler, cf_recommender, lightgcn_recommender, movies_df = load_data_and_model()
 except Exception as e:
     st.error(f"加载数据时出错: {str(e)}")
     st.stop()
 
 # 侧边栏
 st.sidebar.header("⚙️ 推荐设置")
-user_id = st.sidebar.number_input("请输入用户ID", min_value=1, max_value=610, value=1)
+user_id = st.sidebar.number_input("请输入用户ID", min_value=1, max_value=6040, value=1)
 n_recommendations = st.sidebar.slider("推荐数量", min_value=1, max_value=20, value=5)
-method = st.sidebar.radio("推荐方法", ("基于用户", "基于物品"))
+method = st.sidebar.radio("推荐方法", ("基于用户", "基于物品", "LightGCN"))
 
 # 主要内容区域
 col1, col2 = st.columns(2)
@@ -92,18 +116,27 @@ with col2:
         with st.spinner('正在生成推荐...'):
             try:
                 if method == "基于用户":
-                    recommendations = recommender.recommend_items_user_based(user_id, n_recommendations)
-                else:
-                    recommendations = recommender.recommend_items_item_based(user_id, n_recommendations)
+                    recommendations = cf_recommender.recommend_items_user_based(user_id, n_recommendations)
+                elif method == "基于物品":
+                    recommendations = cf_recommender.recommend_items_item_based(user_id, n_recommendations)
+                else:  # LightGCN
+                    recommendations = lightgcn_recommender.recommend(user_id-1, n_recommendations)  # LightGCN uses 0-based indexing
                 
                 if recommendations:
                     # 获取推荐电影的详细信息
-                    recommended_movie_ids = [item_id for item_id, score in recommendations]
+                    if method == "LightGCN":
+                        # LightGCN返回的是(item_id, score)元组
+                        recommended_movie_ids = [item_id+1 for item_id, score in recommendations]  # Convert back to 1-based indexing
+                        score_dict = {item_id+1: score for item_id, score in recommendations}
+                    else:
+                        # 传统方法返回的是(item_id, score)元组
+                        recommended_movie_ids = [item_id for item_id, score in recommendations]
+                        score_dict = dict(recommendations)
+                    
                     recommended_movies = movies_df[movies_df['movieId'].isin(recommended_movie_ids)]
                     
                     # 合并推荐分数
                     recommended_movies = recommended_movies.copy()
-                    score_dict = dict(recommendations)
                     recommended_movies['推荐分数'] = recommended_movies['movieId'].map(score_dict)
                     recommended_movies = recommended_movies.sort_values('推荐分数', ascending=False)
                     

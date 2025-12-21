@@ -3,9 +3,10 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 class MovieLensDataHandler:
-    def __init__(self, ratings_path, movies_path):
+    def __init__(self, ratings_path, movies_path, dataset_type='ml-latest-small'):
         self.ratings_path = ratings_path
         self.movies_path = movies_path
+        self.dataset_type = dataset_type  # 'ml-latest-small' or 'ml-1m'
         self.ratings_df = None
         self.movies_df = None
         self.train_data = None
@@ -13,10 +14,27 @@ class MovieLensDataHandler:
         
     def load_data(self):
         """加载MovieLens数据集"""
-        # 加载评分数据
-        self.ratings_df = pd.read_csv(self.ratings_path)
-        # 加载电影数据
-        self.movies_df = pd.read_csv(self.movies_path)
+        if self.dataset_type == 'ml-1m':
+            # ml-1m数据集使用::作为分隔符
+            self.ratings_df = pd.read_csv(
+                self.ratings_path, 
+                sep='::', 
+                names=['userId', 'movieId', 'rating', 'timestamp'],
+                engine='python',
+                encoding='latin-1'
+            )
+            
+            self.movies_df = pd.read_csv(
+                self.movies_path, 
+                sep='::', 
+                names=['movieId', 'title', 'genres'],
+                engine='python',
+                encoding='latin-1'
+            )
+        else:
+            # 默认处理ml-latest-small数据集
+            self.ratings_df = pd.read_csv(self.ratings_path)
+            self.movies_df = pd.read_csv(self.movies_path)
         
         print(f"评分数据形状: {self.ratings_df.shape}")
         print(f"电影数据形状: {self.movies_df.shape}")
@@ -62,8 +80,9 @@ class MovieLensDataHandler:
 if __name__ == "__main__":
     # 初始化数据处理器
     data_handler = MovieLensDataHandler(
-        ratings_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-latest-small/ratings.csv",
-        movies_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-latest-small/movies.csv"
+        ratings_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-1m/ratings.dat",
+        movies_path="/home/admin/myfile/buaa_myxxjs/film/personalized_ir_system/data/ml-1m/movies.dat",
+        dataset_type='ml-1m'
     )
     
     # 加载数据

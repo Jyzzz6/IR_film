@@ -10,11 +10,13 @@ personalized_ir_system/
 │   └── ml-latest-small/     # MovieLens数据集
 ├── docs/                    # 文档目录
 │   ├── technical_doc.md     # 技术文档
-│   └── user_guide.md        # 使用指南
+│   ├── user_guide.md        # 使用指南
+│   └── lightgcn_documentation.md  # LightGCN算法文档
 ├── src/                     # 源代码目录
 │   ├── __init__.py
 │   ├── data_handler.py      # 数据处理模块
-│   ├── recommender.py       # 推荐算法模块
+│   ├── recommender.py       # 传统协同过滤推荐算法模块
+│   ├── lightgcn_recommender.py  # LightGCN推荐算法模块
 │   ├── evaluator.py         # 评估模块
 │   └── main.py              # 主程序入口
 ├── requirements.txt          # 依赖包列表
@@ -27,6 +29,7 @@ personalized_ir_system/
 2. **多种推荐算法**：
    - 基于用户的协同过滤 (User-Based Collaborative Filtering)
    - 基于物品的协同过滤 (Item-Based Collaborative Filtering)
+   - 基于图卷积网络的推荐算法 (LightGCN)
 3. **推荐效果评估**：提供RMSE、MAE等评估指标
 4. **交互式用户界面**：基于Streamlit的Web界面，方便用户体验
 
@@ -39,12 +42,17 @@ personalized_ir_system/
    - 物品相似度计算：使用余弦相似度计算电影之间的相似性
    - 评分预测：根据相似用户或相似物品的历史评分预测目标用户对未观看电影的评分
 
-2. **数据处理**：
+2. **LightGCN（简化图卷积网络）**：
+   - 基于用户-物品二部图的图神经网络
+   - 通过多层邻域聚合捕获高阶协同信号
+   - 移除特征变换和非线性激活，只保留邻域聚合操作
+
+3. **数据处理**：
    - 数据清洗与预处理
    - 用户-物品评分矩阵构建
    - 训练集与测试集划分
 
-3. **评估指标**：
+4. **评估指标**：
    - RMSE (Root Mean Square Error)
    - MAE (Mean Absolute Error)
    - Precision, Recall, F1-Score (用于Top-N推荐评估)
@@ -93,9 +101,15 @@ streamlit run src/main.py
 - 数据集划分
 
 ### recommender.py
-实现核心推荐算法：
+实现传统协同过滤推荐算法：
 - 用户相似度计算
 - 物品相似度计算
+- 评分预测
+
+### lightgcn_recommender.py
+实现LightGCN推荐算法：
+- 图卷积网络模型
+- 邻域聚合操作
 - 评分预测
 
 ### evaluator.py
@@ -106,12 +120,29 @@ streamlit run src/main.py
 ### main.py
 主程序文件，包含Streamlit界面实现。
 
+### train_lightgcn.py
+专门用于训练LightGCN模型的脚本，可将训练好的模型保存到磁盘供后续使用。
+
 ## 数据集
 
-本项目使用MovieLens数据集的小型版本(ml-latest-small)，包含：
-- 电影评分数据 (ratings.csv)
-- 电影信息 (movies.csv)
-- 用户标签数据 (tags.csv)
+本项目使用MovieLens数据集的1M版本(ml-1m)，包含：
+- 电影评分数据 (ratings.dat)
+- 电影信息 (movies.dat)
+- 用户信息 (users.dat)
+
+## 模型训练与使用
+
+系统支持两种方式使用LightGCN模型：
+
+1. **预训练模型**：系统会自动尝试加载已保存的预训练模型，如果存在则直接使用
+2. **即时训练**：如果没有找到预训练模型，系统会在启动时训练一个新的模型
+
+要训练并保存模型，请运行：
+```bash
+python train_lightgcn.py
+```
+
+这将在`models/`目录下创建模型文件，下次运行Web应用时将自动加载该模型。
 
 ## 评估结果
 
