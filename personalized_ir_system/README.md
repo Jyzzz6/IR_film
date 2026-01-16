@@ -1,5 +1,7 @@
 # 个性化信息检索系统 (Personalized Information Retrieval System)
 
+github地址：https://github.com/Jyzzz6/IR_film
+
 一个基于协同过滤算法的电影推荐系统，实现了用户个性化推荐功能，集成了最新的大语言模型增强推荐技术(PALR)。
 
 ## 目录结构
